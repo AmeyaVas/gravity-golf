@@ -25,9 +25,19 @@ double-click `index.html` to play in any browser.
 Open `index.html#debug` to expose `window.gg` in the console:
 
 ```js
-gg.state          // current hole / strokes / score
+gg.state           // current hole / strokes / score
+gg.ball            // live ball: {x, y, vx, vy, alive, captured}
 gg.load(4)         // jump to hole 5 (0-indexed)
 gg.putt(300, -200) // fire the ball with a velocity vector
+gg.sim(2.5)        // fast-forward the physics 2.5s, return where the ball ended up
+```
+
+`gg.sim()` steps the physics directly instead of waiting on animation frames,
+so it is the quick way to test a shot from the console. It stops early if the
+ball sinks, and reports where things ended up:
+
+```js
+gg.sim(6) // -> {x, y, v, sunk, strokes, captured, atRest}
 ```
 
 Course layout and physics constants are all near the top of the `<script>`
