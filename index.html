@@ -135,7 +135,12 @@ const HOLES = [
 ];
 
 // ---------- physics constants ----------
-const G = 2600;            // gravity strength
+// Gravity strength. Peak pull is ~G/300 px/s² at a body's surface (the minD clamp
+// in accelAt caps it there), against launch speeds up to MAX_PULL*LAUNCH_K = 798 px/s.
+// At the old 2600 that peak was 8.7 px/s², which bent a full-power shot by 1px over
+// its whole flight — gravity was decorative. Escape velocity stays low because the
+// field is inverse-square, so a ball that settles on a planet still putts off easily.
+const G = 120000;
 const BALL_R = 7;
 const REST_SPEED = 6;      // below this (px/s) the ball is "at rest"
 const SINK_SPEED = 250;    // must be slower than this at the cup mouth to get caught
@@ -148,7 +153,12 @@ const WALL_BOUNCE = 0.72;
 const PLANET_BOUNCE = 0.6;
 const FRICTION = 0.9;      // per second velocity damping (space dust) — sets putt range
 
-function planetMass(p){ return p.r*p.r * (p.type==='sun'?1.7:1) * (p.type==='repulsor'?-1:1); }
+// Suns kill on contact, so their pull is a death-basin rather than a slingshot: at the
+// old 1.7 multiplier, raising G to 120000 killed 91% of all shots on hole 3 (a lone
+// r70 sun mid-board) versus 12% before. Pulling them below planet mass keeps them a
+// real hazard without letting them swallow the board.
+const SUN_MASS = 0.25;
+function planetMass(p){ return p.r*p.r * (p.type==='sun'?SUN_MASS:1) * (p.type==='repulsor'?-1:1); }
 function planetColor(p){
   if(p.type==='sun') return {a:'#ffd27a',b:'#ff7a3c',glow:'rgba(255,150,60,.28)'};
   if(p.type==='repulsor') return {a:'#9a7cff',b:'#4b2fae',glow:'rgba(120,90,255,.22)'};
