@@ -1,0 +1,10 @@
+# Store every text file with LF in the repository and check it out as LF on
+# every platform.
+#
+# Without this, git's core.autocrlf=true (the Windows default) rewrites working
+# copies to CRLF. The blobs stay LF, so nothing breaks for a solo developer on
+# one machine — but a clone on another OS, or a tool that compares the working
+# tree rather than the index, sees whole files as changed.
+#
+# text=auto lets git detect and leave binary files alone.
+* text=auto eol=lf
