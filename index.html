@@ -34,7 +34,10 @@
   .chip .v{font-size:19px; font-weight:700; font-variant-numeric:tabular-nums}
   .chip .v.under{color:var(--good)}
   .chip .v.over{color:var(--warn)}
-  #wrap{position:relative; width:min(900px,100%); aspect-ratio:3/2}
+  /* Grow the board to whatever the viewport allows. The 3rd term keeps the
+     3:2 box from pushing the HUD and buttons off-screen on short windows —
+     ~230px is the chrome above and below it. */
+  #wrap{position:relative; width:min(1280px, 100%, (100vh - 230px) * 1.5); aspect-ratio:3/2}
   canvas{
     width:100%; height:100%; display:block; border-radius:14px;
     border:1px solid #1e2440; background:#04050b; touch-action:none;
@@ -88,7 +91,13 @@
 (() => {
 "use strict";
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
-const W = cv.width, H = cv.height;
+// W/H stay the logical play-field size that every coordinate below is written in.
+// The backing store is scaled by the display density so the board stays sharp now
+// that CSS stretches it past 900px; ctx.scale lets all drawing keep using W/H.
+const W = 900, H = 600;
+const DPR = Math.min(window.devicePixelRatio || 1, 2);
+cv.width = W * DPR; cv.height = H * DPR;
+ctx.scale(DPR, DPR);
 
 // ---------- course design ----------
 // coords in the 900x600 canvas space
@@ -216,7 +225,11 @@ function onUp(e){
   syncHUD();
   e.preventDefault();
 }
-cv.addEventListener('mousedown',onDown); cv.addEventListener('mousemove',onMove);
+cv.addEventListener('mousedown',onDown);
+// mousemove goes on window, not the canvas: you pull *away* from the target, and
+// every tee sits near an edge, so a full-power drag leaves the canvas. Bound to
+// the canvas, aim froze at the border and capped tee shots at 32-61% power.
+window.addEventListener('mousemove',onMove);
 window.addEventListener('mouseup',onUp);
 cv.addEventListener('touchstart',onDown,{passive:false});
 cv.addEventListener('touchmove',onMove,{passive:false});
