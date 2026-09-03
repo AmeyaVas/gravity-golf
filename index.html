@@ -109,9 +109,11 @@ const HOLES = [
       {x:640,y:220,r:34,type:'planet'} ] },
   { par:3, tee:{x:100,y:100}, cup:{x:800,y:500}, planets:[
       {x:450,y:300,r:70,type:'sun'} ] },
-  { par:3, tee:{x:90,y:300}, cup:{x:810,y:300}, planets:[
-      {x:340,y:170,r:40,type:'planet'},
-      {x:560,y:430,r:40,type:'planet'} ] },
+  // repulsor introduction: the planet blocks the straight line, and the repulsor
+  // guards the corner cup. Get past it and its push works in your favour.
+  { par:4, tee:{x:100,y:500}, cup:{x:830,y:110}, planets:[
+      {x:380,y:330,r:46,type:'planet'},
+      {x:700,y:220,r:40,type:'repulsor'} ] },
   { par:4, tee:{x:80,y:520}, cup:{x:830,y:80}, planets:[
       {x:300,y:360,r:44,type:'planet'},
       {x:480,y:250,r:38,type:'sun'},
