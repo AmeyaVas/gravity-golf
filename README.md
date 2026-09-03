@@ -50,7 +50,19 @@ gg.ball            // live ball: {x, y, vx, vy, alive, captured}
 gg.load(4)         // jump to hole 5 (0-indexed)
 gg.putt(300, -200) // fire the ball with a velocity vector
 gg.sim(2.5)        // fast-forward the physics 2.5s, return where the ball ended up
+gg.audit()         // check every body actually reaches its hole's line
 ```
+
+`gg.audit()` exists because gravity is a *finite* well: a body more than `FIELD_R`
+radii from a hole's tee-to-cup line exerts nothing on the direct route and is just
+scenery. It returns a row per body with its distance, reach and margin, and anything
+out of reach — or within `AUDIT_THIN` px of it — is flagged in the console on load
+under `#debug`. Run it after editing `HOLES`.
+
+It measures the *straight* line only, so read it as a smell rather than a verdict.
+Hole 6 is the standing example: its planet is 183px out against a 184px reach and
+gets flagged, but the hole plays fine, because the real route curves around the
+repulsor before reaching it.
 
 `gg.sim()` steps the physics directly instead of waiting on animation frames,
 so it is the quick way to test a shot from the console. It stops early if the
