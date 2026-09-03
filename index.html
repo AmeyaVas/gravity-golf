@@ -657,8 +657,46 @@ function frame(now){
   requestAnimationFrame(frame);
 }
 
+// ---------- course audit ----------
+// Since gravity became a finite well, a body further than FIELD_R radii from a hole's
+// tee->cup line exerts nothing on the direct route and reads as scenery — that is how
+// the old hole 8 ended up with two inert planets. A thin margin is the subtler trap:
+// it works today, but any later change to FIELD_R or a radius kills it silently.
+//
+// This measures the STRAIGHT line only, so treat it as a smell, not a verdict. Hole 6
+// is the standing example: its planet sits 183px out against a 184px reach, yet the
+// hole plays fine because the real route curves out around the repulsor first.
+const AUDIT_THIN = 20;              // px of margin below which a body is worth a look
+function auditCourse(){
+  const rows = [];
+  HOLES.forEach((h,i) => {
+    const ax=h.tee.x, ay=h.tee.y, bx=h.cup.x, by=h.cup.y;
+    const L2 = (bx-ax)*(bx-ax) + (by-ay)*(by-ay);
+    h.planets.forEach(p => {
+      let t = ((p.x-ax)*(bx-ax) + (p.y-ay)*(by-ay)) / L2;
+      t = Math.max(0, Math.min(1, t));
+      const dist  = Math.hypot(p.x-(ax+t*(bx-ax)), p.y-(ay+t*(by-ay)));
+      const reach = p.r * FIELD_R;
+      const margin = reach - dist;
+      rows.push({
+        hole:i+1, type:p.type, r:p.r, at:`(${p.x},${p.y})`,
+        dist:Math.round(dist), reach:Math.round(reach), margin:Math.round(margin),
+        status: margin < 0 ? 'no pull on the direct line'
+              : margin < AUDIT_THIN ? 'thin margin' : 'ok'
+      });
+    });
+  });
+  return rows;
+}
+
 if(location.hash === '#debug'){
+  const flagged = auditCourse().filter(r => r.status !== 'ok');
+  if(flagged.length){
+    console.warn(`gravity-golf: ${flagged.length} of ${auditCourse().length} bodies flagged — gg.audit() for the table`);
+    console.table(flagged);
+  }
   window.gg = {
+    audit: auditCourse,
     get ball(){ return ball; },
     get state(){ return {holeIdx, strokes, totalToPar:toPar(), scores, reached, sunk, atRest:ballAtRest()}; },
     putt(vx,vy){ ball.vx=vx; ball.vy=vy; strokes++; restPos={x:ball.x,y:ball.y}; syncHUD(); },
