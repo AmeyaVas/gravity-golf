@@ -138,10 +138,14 @@ const HOLES = [
       {x:300,y:300,r:30,type:'repulsor'},
       {x:470,y:300,r:60,type:'sun'},
       {x:640,y:300,r:30,type:'repulsor'} ] },
-  { par:4, tee:{x:100,y:110}, cup:{x:800,y:110}, planets:[
-      {x:250,y:330,r:44,type:'planet'},
-      {x:450,y:180,r:30,type:'planet'},
-      {x:650,y:340,r:44,type:'planet'} ] },
+  // sun blockade: the sun sits dead on the tee->cup line, so you have to commit to a
+  // side. The planets below and above bend you back toward the cup. The old layout
+  // ran along y=110 with two planets 220px+ off the line — outside their 176px reach,
+  // so they pulled on nothing and a shot up the top wall coasted home.
+  { par:4, tee:{x:100,y:180}, cup:{x:800,y:180}, planets:[
+      {x:280,y:320,r:44,type:'planet'},
+      {x:450,y:180,r:46,type:'sun'},
+      {x:640,y:60,r:38,type:'planet'} ] },
   { par:5, tee:{x:80,y:520}, cup:{x:830,y:520}, planets:[
       {x:260,y:330,r:46,type:'planet'},
       {x:450,y:470,r:36,type:'sun'},
