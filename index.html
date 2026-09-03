@@ -129,9 +129,11 @@ const HOLES = [
       {x:300,y:360,r:44,type:'planet'},
       {x:480,y:250,r:38,type:'sun'},
       {x:660,y:170,r:40,type:'planet'} ] },
-  { par:3, tee:{x:450,y:540}, cup:{x:450,y:70}, planets:[
-      {x:330,y:300,r:40,type:'planet'},
-      {x:570,y:300,r:40,type:'planet'} ] },
+  // repulsor gate: the repulsor sits straight above the tee, so firing up the middle
+  // shoves you off line. The planet up-right pulls you back toward the cup.
+  { par:3, tee:{x:450,y:545}, cup:{x:430,y:80}, planets:[
+      {x:450,y:390,r:36,type:'repulsor'},
+      {x:620,y:230,r:46,type:'planet'} ] },
   { par:4, tee:{x:90,y:300}, cup:{x:815,y:300}, planets:[
       {x:300,y:300,r:30,type:'repulsor'},
       {x:470,y:300,r:60,type:'sun'},
