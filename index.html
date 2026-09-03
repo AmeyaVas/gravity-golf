@@ -34,10 +34,19 @@
   .chip .v{font-size:19px; font-weight:700; font-variant-numeric:tabular-nums}
   .chip .v.under{color:var(--good)}
   .chip .v.over{color:var(--warn)}
+  #sel{display:flex; gap:6px; flex-wrap:wrap; justify-content:center; width:min(900px,100%)}
+  #sel button{
+    font:inherit; font-weight:700; font-size:12px; width:30px; height:30px; padding:0;
+    border-radius:8px; background:var(--panel); color:var(--muted);
+    border:1px solid #1e2440; cursor:pointer; font-variant-numeric:tabular-nums;
+  }
+  #sel button.done{color:var(--good); border-color:#2a4a52}
+  #sel button.at{background:var(--accent); color:#04121a; border-color:var(--accent)}
+  #sel button:disabled{opacity:.3; cursor:not-allowed}
   /* Grow the board to whatever the viewport allows. The 3rd term keeps the
      3:2 box from pushing the HUD and buttons off-screen on short windows —
-     ~230px is the chrome above and below it. */
-  #wrap{position:relative; width:min(1280px, 100%, (100vh - 230px) * 1.5); aspect-ratio:3/2}
+     ~275px is the chrome above and below it (the hole selector adds ~42px). */
+  #wrap{position:relative; width:min(1280px, 100%, (100vh - 275px) * 1.5); aspect-ratio:3/2}
   canvas{
     width:100%; height:100%; display:block; border-radius:14px;
     border:1px solid #1e2440; background:#04050b; touch-action:none;
@@ -69,6 +78,8 @@
     <div class="chip"><span class="k">Strokes</span><span class="v" id="s-str">0</span></div>
     <div class="chip"><span class="k">Total</span><span class="v" id="s-tot">E</span></div>
   </div>
+
+  <div id="sel" role="group" aria-label="Hole select"></div>
 
   <div id="wrap">
     <canvas id="c" width="900" height="600"></canvas>
@@ -174,7 +185,33 @@ function planetColor(p){
 }
 
 // ---------- state ----------
-let holeIdx = 0, strokes = 0, totalToPar = 0;
+let holeIdx = 0, strokes = 0;
+// Per-hole strokes, null until you sink it. Replaces a running total: with a hole
+// selector you can revisit a finished hole, and a `total += diff` accumulator would
+// count it twice. (That was already reachable — the overlay covers #wrap, but
+// "Replay hole" sits outside it and stays clickable after you sink.)
+let scores = new Array(HOLES.length).fill(null);
+let reached = 0;                       // furthest hole unlocked
+const SAVE_KEY = 'gravity-golf/v1';
+
+function toPar(){
+  let t = 0;
+  for(let i=0;i<HOLES.length;i++) if(scores[i]!=null) t += scores[i] - HOLES[i].par;
+  return t;
+}
+// Storage throws in some private-browsing modes, so every touch is guarded and the
+// game runs fine with nothing stored.
+function saveProgress(){
+  try{ localStorage.setItem(SAVE_KEY, JSON.stringify({reached, scores})); }catch(e){}
+}
+function loadProgress(){
+  try{
+    const d = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+    if(!d || !Array.isArray(d.scores) || d.scores.length !== HOLES.length) return;
+    reached = Math.min(Math.max(d.reached|0, 0), HOLES.length-1);
+    scores = d.scores.map(s => (Number.isInteger(s) && s > 0) ? s : null);
+  }catch(e){}
+}
 let ball, restPos, sunk, aiming, aimStart, aimNow, confetti = [], stars = [];
 let flagWave = 0;
 
@@ -185,8 +222,31 @@ function makeStars(){
 }
 makeStars();
 
+function buildSelector(){
+  const s = document.getElementById('sel');
+  for(let i=0;i<HOLES.length;i++){
+    const b = document.createElement('button');
+    b.textContent = i+1;
+    b.onclick = () => { if(i <= reached) loadHole(i); };
+    s.appendChild(b);
+  }
+}
+function syncSelector(){
+  const kids = document.getElementById('sel').children;
+  for(let i=0;i<kids.length;i++){
+    const b = kids[i];
+    const locked = i > reached;
+    b.disabled = locked;
+    b.className = i===holeIdx ? 'at' : (scores[i]!=null ? 'done' : '');
+    b.title = locked ? `Hole ${i+1} — reach it to unlock`
+            : scores[i]!=null ? `Hole ${i+1} — holed in ${scores[i]} (par ${HOLES[i].par})`
+            : `Hole ${i+1} — par ${HOLES[i].par}`;
+  }
+}
+
 function loadHole(i){
   holeIdx = i;
+  if(i > reached){ reached = i; saveProgress(); }
   const h = HOLES[i];
   strokes = 0;
   ball = {x:h.tee.x, y:h.tee.y, vx:0, vy:0, alive:true, captured:false};
@@ -196,14 +256,23 @@ function loadHole(i){
   syncHUD();
 }
 
+// A fresh round: scorecard cleared, but holes you have reached stay unlocked.
+function newGame(){
+  scores.fill(null);
+  saveProgress();
+  loadHole(0);
+}
+
 function syncHUD(){
   const h = HOLES[holeIdx];
   document.getElementById('s-hole').textContent = holeIdx+1;
   document.getElementById('s-par').textContent = h.par;
   document.getElementById('s-str').textContent = strokes;
+  const tot = toPar();
   const t = document.getElementById('s-tot');
-  t.textContent = totalToPar===0 ? 'E' : (totalToPar>0?'+'+totalToPar:totalToPar);
-  t.className = 'v ' + (totalToPar<0?'under':totalToPar>0?'over':'');
+  t.textContent = tot===0 ? 'E' : (tot>0?'+'+tot:tot);
+  t.className = 'v ' + (tot<0?'under':tot>0?'over':'');
+  syncSelector();
 }
 
 // ---------- input ----------
@@ -258,11 +327,11 @@ document.getElementById('btn-retry').onclick = () => {
   loadHole(holeIdx);
 };
 document.getElementById('btn-reset').onclick = () => {
-  totalToPar = 0; loadHole(0);
+  newGame();
 };
 document.getElementById('ov-btn').onclick = () => {
   if(holeIdx < HOLES.length-1) loadHole(holeIdx+1);
-  else { totalToPar = 0; loadHole(0); }
+  else newGame();
 };
 
 function showOverlay(title, text, btn){
@@ -397,14 +466,16 @@ function sink(){
   ball.x = cup.x; ball.y = cup.y;
   const h = HOLES[holeIdx];
   const diff = strokes - h.par;
-  totalToPar += diff;
+  scores[holeIdx] = strokes;           // set, not accumulate: replaying overwrites
+  saveProgress();
   syncHUD();
   let name = diff<=-3?'Albatross!!!':diff===-2?'Eagle!':diff===-1?'Birdie!':
              diff===0?'Par':diff===1?'Bogey':diff===2?'Double bogey':(diff)+' over';
   if(strokes===1) name = 'HOLE IN ONE!';
   if(strokes===1 || diff<0) burst();
   const last = holeIdx === HOLES.length-1;
-  const totTxt = totalToPar===0?'even': totalToPar>0?totalToPar+' over par':(-totalToPar)+' under par';
+  const tot = toPar();
+  const totTxt = tot===0?'even': tot>0?tot+' over par':(-tot)+' under par';
   showOverlay(name,
     last ? `Final: ${totTxt}. Great round.` : `${strokes} stroke${strokes>1?'s':''} · you're ${totTxt}.`,
     last ? 'Play again' : 'Next hole');
@@ -583,13 +654,15 @@ function frame(now){
 if(location.hash === '#debug'){
   window.gg = {
     get ball(){ return ball; },
-    get state(){ return {holeIdx, strokes, totalToPar, sunk, atRest:ballAtRest()}; },
+    get state(){ return {holeIdx, strokes, totalToPar:toPar(), scores, reached, sunk, atRest:ballAtRest()}; },
     putt(vx,vy){ ball.vx=vx; ball.vy=vy; strokes++; restPos={x:ball.x,y:ball.y}; syncHUD(); },
     load: loadHole,
     sim(sec){ let n=Math.round(sec/0.016); for(let i=0;i<n && !sunk;i++) stepBall(0.016); return {x:ball.x,y:ball.y,v:speed(ball),sunk,strokes,captured:ball.captured,atRest:ballAtRest()&&!ball.captured}; }
   };
 }
 
+loadProgress();
+buildSelector();
 loadHole(0);
 requestAnimationFrame(frame);
 })();
