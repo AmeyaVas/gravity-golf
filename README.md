@@ -28,17 +28,15 @@ Your unlocked holes and scorecard are saved in the browser, so closing the tab
 and coming back keeps your progress. Replaying a hole overwrites that hole's
 score rather than adding to your total.
 
-**Saving may not work when you open `index.html` directly.** Browsers restrict
-storage on `file://` pages — Safari blocks it outright, and others vary — so
-progress can silently reset between sessions. Nothing breaks either way: the
-game runs the same, it just starts over. If you want progress to stick, serve
-the folder over HTTP instead:
+Saving works when you double-click `index.html` in Chrome, and over a local
+server — both verified. Browsers do differ on whether they allow storage for
+`file://` pages, though, so if progress ever resets between sessions on some
+other browser, that is why. Nothing breaks either way: the game plays the same,
+it just starts over. Serving the folder over HTTP sidesteps it entirely:
 
 ```sh
-npx serve .        # or: python -m http.server
+npx serve .        # or any static file server
 ```
-
-Then open the address it prints. Verified working over `http://localhost`.
 
 ## Tinkering
 
