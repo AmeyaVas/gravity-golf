@@ -135,12 +135,17 @@ const HOLES = [
 ];
 
 // ---------- physics constants ----------
-// Gravity strength. Peak pull is ~G/300 px/s² at a body's surface (the minD clamp
-// in accelAt caps it there), against launch speeds up to MAX_PULL*LAUNCH_K = 798 px/s.
-// At the old 2600 that peak was 8.7 px/s², which bent a full-power shot by 1px over
-// its whole flight — gravity was decorative. Escape velocity stays low because the
-// field is inverse-square, so a ball that settles on a planet still putts off easily.
-const G = 120000;
+// Gravity strength, applied only inside a body's well (see FIELD_R and accelAt).
+// At the original 2600 the peak pull was 8.7 px/s² against launch speeds up to
+// MAX_PULL*LAUNCH_K = 798 px/s, which bent a full-power shot by 1px over its whole
+// flight — gravity was decorative. G is high here because the taper gives most of
+// the well far less than the peak.
+const G = 400000;
+// How far a body pulls, in multiples of its own radius. This exists so the ball can
+// come to rest: with an unbounded inverse-square field, gravity at 300px still beat
+// friction, so a "stopped" ball crept toward the nearest planet forever and never
+// got its at-rest ring. At 4.0 every hole settles 100% of the time.
+const FIELD_R = 4.0;
 const BALL_R = 7;
 const REST_SPEED = 6;      // below this (px/s) the ball is "at rest"
 const SINK_SPEED = 250;    // must be slower than this at the cup mouth to get caught
@@ -149,6 +154,7 @@ const CUP_MOUTH = 32;      // ball this close to the cup gets caught (if slow en
 const CUP_PULL = 4200;     // strength of the cup's gravity well
 const MAX_PULL = 190;      // px of drag
 const LAUNCH_K = 4.2;      // drag px -> initial speed
+const PREVIEW_T = 1.5;     // seconds of flight the aim line predicts before fading out
 const WALL_BOUNCE = 0.72;
 const PLANET_BOUNCE = 0.6;
 const FRICTION = 0.9;      // per second velocity damping (space dust) — sets putt range
@@ -274,10 +280,73 @@ function accelAt(x,y){
     const minD = p.r+BALL_R;
     if(d2 < minD*minD) d2 = minD*minD;
     const d = Math.sqrt(d2);
-    const f = G * planetMass(p) / d2 / 300;
+    // Finite well. Beyond FIELD_R radii a body has no pull at all, so the ball can
+    // actually come to rest out in open space; the taper eases the pull to zero at
+    // the boundary instead of switching it off, which would visibly snap.
+    const reach = p.r * FIELD_R;
+    if(d >= reach) continue;
+    // (1-q³)² rather than a linear (1-q)²: both hit exactly zero at the edge, but
+    // this holds nearly all the pull through the middle of the well, which is where
+    // a fast shot flies. A linear taper left only 25% of the pull there, so
+    // full-power shots sailed past almost unbent: 20px of curve, against 75px here.
+    const q = d/reach;
+    const t = 1 - q*q*q;
+    const f = G * planetMass(p) / d2 / 300 * t*t;
     ax += f*dx/d; ay += f*dy/d;
   }
   return {ax,ay};
+}
+
+// ---------- shared motion ----------
+// stepBall and the aim preview both run these, so the dotted line cannot drift from
+// what the ball actually does. The preview used to re-implement the integrator and
+// left friction out entirely, which made it overshoot badly and — because an undamped
+// ball never slows, and fast balls barely bend — hid the curve the shot would take.
+const SUBSTEP = 1/360;                 // matches stepBall's dt/N at 60fps
+
+function stepFree(s, h){
+  const a = accelAt(s.x, s.y);
+  s.vx += a.ax*h; s.vy += a.ay*h;
+  const damp = Math.max(0, 1 - FRICTION*h);
+  s.vx *= damp; s.vy *= damp;
+  s.x += s.vx*h; s.y += s.vy*h;
+}
+// 'sun' if it burned up, 'hit' if it bounced off a planet, '' otherwise
+function collideBodies(s){
+  let res = '';
+  for(const p of HOLES[holeIdx].planets){
+    const dx = s.x-p.x, dy = s.y-p.y;
+    const d = Math.hypot(dx,dy), minD = p.r+BALL_R;
+    if(d < minD){
+      if(p.type==='sun') return 'sun';
+      const nx=dx/d, ny=dy/d;
+      const vn = s.vx*nx + s.vy*ny;
+      s.vx -= (1+PLANET_BOUNCE)*vn*nx;
+      s.vy -= (1+PLANET_BOUNCE)*vn*ny;
+      s.x = p.x + nx*minD; s.y = p.y + ny*minD;
+      res = 'hit';
+    }
+  }
+  return res;
+}
+function collideWalls(s){
+  if(s.x < BALL_R){ s.x=BALL_R; s.vx=-s.vx*WALL_BOUNCE; }
+  if(s.x > W-BALL_R){ s.x=W-BALL_R; s.vx=-s.vx*WALL_BOUNCE; }
+  if(s.y < BALL_R){ s.y=BALL_R; s.vy=-s.vy*WALL_BOUNCE; }
+  if(s.y > H-BALL_R){ s.y=H-BALL_R; s.vy=-s.vy*WALL_BOUNCE; }
+}
+// applies the cup's well; true when it would catch the ball
+function cupPull(s, h){
+  const cup = HOLES[holeIdx].cup;
+  const ex = cup.x-s.x, ey = cup.y-s.y;
+  const cd = Math.hypot(ex,ey) || 0.001;
+  if(cd < CUP_MOUTH){
+    const pull = CUP_PULL / Math.max(cd*cd, 36);
+    s.vx += ex/cd * pull * h;
+    s.vy += ey/cd * pull * h;
+    if(Math.hypot(s.vx,s.vy) < SINK_SPEED) return true;
+  }
+  return false;
 }
 
 function stepBall(dt){
@@ -300,42 +369,11 @@ function stepBall(dt){
       continue;
     }
 
-    const a = accelAt(ball.x, ball.y);
-    ball.vx += a.ax*h; ball.vy += a.ay*h;
-    // friction
-    const damp = Math.max(0, 1 - FRICTION*h);
-    ball.vx *= damp; ball.vy *= damp;
-    ball.x += ball.vx*h; ball.y += ball.vy*h;
-
-    // planet collisions / sun death
-    for(const p of HOLES[holeIdx].planets){
-      const dx = ball.x-p.x, dy = ball.y-p.y;
-      const d = Math.hypot(dx,dy), minD = p.r+BALL_R;
-      if(d < minD){
-        if(p.type==='sun'){ killBall(); return; }
-        const nx=dx/d, ny=dy/d;
-        const vn = ball.vx*nx + ball.vy*ny;
-        ball.vx -= (1+PLANET_BOUNCE)*vn*nx;
-        ball.vy -= (1+PLANET_BOUNCE)*vn*ny;
-        ball.x = p.x + nx*minD; ball.y = p.y + ny*minD;
-      }
-    }
-    // walls
-    if(ball.x < BALL_R){ ball.x=BALL_R; ball.vx=-ball.vx*WALL_BOUNCE; }
-    if(ball.x > W-BALL_R){ ball.x=W-BALL_R; ball.vx=-ball.vx*WALL_BOUNCE; }
-    if(ball.y < BALL_R){ ball.y=BALL_R; ball.vy=-ball.vy*WALL_BOUNCE; }
-    if(ball.y > H-BALL_R){ ball.y=H-BALL_R; ball.vy=-ball.vy*WALL_BOUNCE; }
-
+    stepFree(ball, h);
+    if(collideBodies(ball) === 'sun'){ killBall(); return; }
+    collideWalls(ball);
     // cup: pull nearby balls in; grab the ones that arrive on-target and not too fast
-    const cup = HOLES[holeIdx].cup;
-    const ex = cup.x-ball.x, ey = cup.y-ball.y;
-    const cd = Math.hypot(ex,ey) || 0.001;
-    if(cd < CUP_MOUTH){
-      const pull = CUP_PULL / Math.max(cd*cd, 36);
-      ball.vx += ex/cd * pull * h;
-      ball.vy += ey/cd * pull * h;
-      if(speed(ball) < SINK_SPEED) ball.captured = true;   // it's going in
-    }
+    if(cupPull(ball, h)) ball.captured = true;              // it's going in
   }
 }
 
@@ -397,10 +435,11 @@ function draw(dt){
   // planets
   for(const p of h.planets){
     const col = planetColor(p);
-    const g = ctx.createRadialGradient(p.x,p.y,p.r*0.2,p.x,p.y,p.r*2.4);
+    // the glow is drawn at exactly FIELD_R so the halo shows where the pull reaches
+    const g = ctx.createRadialGradient(p.x,p.y,p.r*0.2,p.x,p.y,p.r*FIELD_R);
     g.addColorStop(0,col.glow); g.addColorStop(1,'transparent');
     ctx.fillStyle = g;
-    ctx.beginPath(); ctx.arc(p.x,p.y,p.r*2.4,0,6.2832); ctx.fill();
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.r*FIELD_R,0,6.2832); ctx.fill();
 
     const rg = ctx.createRadialGradient(p.x-p.r*0.3,p.y-p.r*0.3,p.r*0.1,p.x,p.y,p.r);
     rg.addColorStop(0,col.a); rg.addColorStop(1,col.b);
@@ -436,22 +475,44 @@ function draw(dt){
     let d = Math.min(Math.hypot(dx,dy), MAX_PULL);
     const ang = Math.atan2(dy,dx);
     const v = d*LAUNCH_K;
-    // simulate
-    let sx=ball.x, sy=ball.y, svx=Math.cos(ang)*v, svy=Math.sin(ang)*v;
-    ctx.setLineDash([4,7]); ctx.strokeStyle='rgba(102,224,255,.75)'; ctx.lineWidth=2;
-    ctx.beginPath(); ctx.moveTo(sx,sy);
-    const hh = 1/120;
-    for(let i=0;i<220;i++){
-      const a = accelAt(sx,sy);
-      svx += a.ax*hh; svy += a.ay*hh;
-      sx += svx*hh; sy += svy*hh;
-      if(sx<0||sx>W||sy<0||sy>H) break;
-      let hit=false;
-      for(const p of h.planets){ if(Math.hypot(sx-p.x,sy-p.y) < p.r+BALL_R){hit=true;break;} }
-      ctx.lineTo(sx,sy);
-      if(hit) break;
+    // Simulate the real thing: same substep, same friction, same collisions, so the
+    // line ends where the ball ends. Runs until the ball would stop, burn up, drop,
+    // or PREVIEW_T elapses — whichever comes first.
+    const st = {x:ball.x, y:ball.y, vx:Math.cos(ang)*v, vy:Math.sin(ang)*v};
+    const pts = [{x:st.x, y:st.y}];
+    let end = '';
+    const N = Math.round(PREVIEW_T/SUBSTEP);
+    for(let i=0;i<N;i++){
+      stepFree(st, SUBSTEP);
+      if(collideBodies(st) === 'sun'){ end='sun'; pts.push({x:st.x,y:st.y}); break; }
+      collideWalls(st);
+      if(cupPull(st, SUBSTEP)){ end='sink'; pts.push({x:st.x,y:st.y}); break; }
+      if(i%6 === 5) pts.push({x:st.x,y:st.y});
+      if(Math.hypot(st.vx,st.vy) < REST_SPEED){ end='rest'; pts.push({x:st.x,y:st.y}); break; }
     }
-    ctx.stroke(); ctx.setLineDash([]);
+    // fade along the path: full confidence near the ball, trailing off at the horizon
+    ctx.setLineDash([4,7]); ctx.lineWidth=2;
+    for(let i=1;i<pts.length;i++){
+      ctx.strokeStyle = `rgba(102,224,255,${(0.85 - 0.6*(i/pts.length)).toFixed(3)})`;
+      ctx.beginPath();
+      ctx.moveTo(pts[i-1].x, pts[i-1].y);
+      ctx.lineTo(pts[i].x, pts[i].y);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    // mark the outcome: where it settles, or what it runs into
+    const last = pts[pts.length-1];
+    if(end==='rest' || end==='sink'){
+      ctx.strokeStyle = end==='sink' ? 'rgba(124,255,178,.9)' : 'rgba(102,224,255,.5)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(last.x, last.y, end==='sink'?7:5, 0, 6.2832); ctx.stroke();
+    } else if(end==='sun'){
+      ctx.strokeStyle='rgba(255,107,139,.9)'; ctx.lineWidth=2;
+      ctx.beginPath();
+      ctx.moveTo(last.x-5,last.y-5); ctx.lineTo(last.x+5,last.y+5);
+      ctx.moveTo(last.x+5,last.y-5); ctx.lineTo(last.x-5,last.y+5);
+      ctx.stroke();
+    }
     // power arrow
     ctx.strokeStyle='rgba(255,255,255,.35)'; ctx.lineWidth=2;
     ctx.beginPath(); ctx.moveTo(ball.x,ball.y);
