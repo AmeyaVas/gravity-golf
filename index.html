@@ -146,11 +146,18 @@ const HOLES = [
       {x:280,y:320,r:44,type:'planet'},
       {x:450,y:180,r:46,type:'sun'},
       {x:640,y:60,r:38,type:'planet'} ] },
-  { par:5, tee:{x:80,y:520}, cup:{x:830,y:520}, planets:[
-      {x:260,y:330,r:46,type:'planet'},
-      {x:450,y:470,r:36,type:'sun'},
-      {x:470,y:180,r:40,type:'planet'},
-      {x:670,y:340,r:46,type:'planet'} ] },
+  // The finale, and the only hole using all three body types. Two things are load
+  // bearing. The planet and sun stacked at x=450 overlap their wells to span the full
+  // board height, so no route to the cup stays out of gravity — bodies clustered in
+  // one band always leave a clear strip against a wall, and only a vertical pair
+  // closes it. The repulsor guards the cup, which is what actually stops the ace:
+  // blocking the straight line with a planet does not, since the ball simply arcs
+  // over, but a repulsor pushes every approach away.
+  { par:5, tee:{x:80,y:300}, cup:{x:830,y:300}, planets:[
+      {x:280,y:200,r:44,type:'planet'},
+      {x:450,y:175,r:48,type:'planet'},
+      {x:450,y:435,r:42,type:'sun'},
+      {x:730,y:300,r:36,type:'repulsor'} ] },
 ];
 
 // ---------- physics constants ----------
