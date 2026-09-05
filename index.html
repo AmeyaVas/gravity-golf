@@ -153,10 +153,15 @@ const HOLES = [
   // closes it. The repulsor guards the cup, which is what actually stops the ace:
   // blocking the straight line with a planet does not, since the ball simply arcs
   // over, but a repulsor pushes every approach away.
+  //
+  // The sun is r60 at y=480 because that pair has to keep meeting after suns dropped to
+  // half reach. The r48 planet covers down to y=367; the ball centre can sit as low as
+  // y=593; a sun spans 4r, so closing 367->593 needs r>=57. At r42/y=435 the well would
+  // have stopped at y=519 and left a clear lane along the bottom wall.
   { par:5, tee:{x:80,y:300}, cup:{x:830,y:300}, planets:[
       {x:280,y:200,r:44,type:'planet'},
       {x:450,y:175,r:48,type:'planet'},
-      {x:450,y:435,r:42,type:'sun'},
+      {x:450,y:480,r:60,type:'sun'},
       {x:730,y:300,r:36,type:'repulsor'} ] },
 ];
 
@@ -171,6 +176,7 @@ const G = 400000;
 // come to rest: with an unbounded inverse-square field, gravity at 300px still beat
 // friction, so a "stopped" ball crept toward the nearest planet forever and never
 // got its at-rest ring. At 4.0 every hole settles 100% of the time.
+// This is the default reach; suns override it below (see SUN_FIELD_R / fieldReach).
 const FIELD_R = 4.0;
 const BALL_R = 7;
 const REST_SPEED = 6;      // below this (px/s) the ball is "at rest"
@@ -185,12 +191,22 @@ const WALL_BOUNCE = 0.72;
 const PLANET_BOUNCE = 0.6;
 const FRICTION = 0.9;      // per second velocity damping (space dust) — sets putt range
 
-// Suns kill on contact, so their pull is a death-basin rather than a slingshot: at the
-// old 1.7 multiplier, raising G to 120000 killed 91% of all shots on hole 3 (a lone
-// r70 sun mid-board) versus 12% before. Pulling them below planet mass keeps them a
-// real hazard without letting them swallow the board.
-const SUN_MASS = 0.25;
-function planetMass(p){ return p.r*p.r * (p.type==='sun'?SUN_MASS:1) * (p.type==='repulsor'?-1:1); }
+// Suns kill on contact, so their pull is a death-basin rather than a slingshot, and the
+// board has to stay playable around them. That safety used to come out of MASS — a 0.25
+// multiplier — which made a sun weak but as wide as any planet: it tugged at you across
+// half the board without ever reading as dangerous. It now comes out of DISTANCE instead.
+// A sun has a planet's full mass and half its reach.
+//
+// This is not a return to the tuning that killed 91% of shots on hole 3 (full mass at the
+// full 4.0 reach, back when G was 120000). The taper in accelAt is measured against each
+// body's own reach, so halving the reach also steepens the falloff. Measured on hole 3's
+// r70 sun: pull at 100px goes 148 -> 262 px/s², but at 140px it goes 63 -> 0, and there is
+// nothing at all beyond. Over a 200-shot fan the hole's kill rate FELL, 28.5% -> 17.5% —
+// the wide weak well used to reel in stray shots that were never aimed at it, and that is
+// what went away. What went up is the price of flying close.
+const SUN_FIELD_R = 2.0;
+function fieldReach(p){ return p.r * (p.type==='sun' ? SUN_FIELD_R : FIELD_R); }
+function planetMass(p){ return p.r*p.r * (p.type==='repulsor'?-1:1); }
 function planetColor(p){
   if(p.type==='sun') return {a:'#ffd27a',b:'#ff7a3c',glow:'rgba(255,150,60,.28)'};
   if(p.type==='repulsor') return {a:'#9a7cff',b:'#4b2fae',glow:'rgba(120,90,255,.22)'};
@@ -367,7 +383,7 @@ function accelAt(x,y){
     // Finite well. Beyond FIELD_R radii a body has no pull at all, so the ball can
     // actually come to rest out in open space; the taper eases the pull to zero at
     // the boundary instead of switching it off, which would visibly snap.
-    const reach = p.r * FIELD_R;
+    const reach = fieldReach(p);
     if(d >= reach) continue;
     // (1-q³)² rather than a linear (1-q)²: both hit exactly zero at the edge, but
     // this holds nearly all the pull through the middle of the well, which is where
@@ -521,11 +537,13 @@ function draw(dt){
   // planets
   for(const p of h.planets){
     const col = planetColor(p);
-    // the glow is drawn at exactly FIELD_R so the halo shows where the pull reaches
-    const g = ctx.createRadialGradient(p.x,p.y,p.r*0.2,p.x,p.y,p.r*FIELD_R);
+    // the glow is drawn at exactly the body's own reach so the halo shows where the pull
+    // reaches — which is why a sun's halo is visibly tighter than a planet's of the same size
+    const reach = fieldReach(p);
+    const g = ctx.createRadialGradient(p.x,p.y,p.r*0.2,p.x,p.y,reach);
     g.addColorStop(0,col.glow); g.addColorStop(1,'transparent');
     ctx.fillStyle = g;
-    ctx.beginPath(); ctx.arc(p.x,p.y,p.r*FIELD_R,0,6.2832); ctx.fill();
+    ctx.beginPath(); ctx.arc(p.x,p.y,reach,0,6.2832); ctx.fill();
 
     const rg = ctx.createRadialGradient(p.x-p.r*0.3,p.y-p.r*0.3,p.r*0.1,p.x,p.y,p.r);
     rg.addColorStop(0,col.a); rg.addColorStop(1,col.b);
@@ -670,9 +688,11 @@ function frame(now){
 // the old hole 8 ended up with two inert planets. A thin margin is the subtler trap:
 // it works today, but any later change to FIELD_R or a radius kills it silently.
 //
-// This measures the STRAIGHT line only, so treat it as a smell, not a verdict. Hole 6
-// is the standing example: its planet sits 183px out against a 184px reach, yet the
-// hole plays fine because the real route curves out around the repulsor first.
+// This measures the STRAIGHT line only, so treat it as a smell, not a verdict. Two
+// standing exceptions: hole 6's planet sits 183px out against a 184px reach, yet the hole
+// plays fine because the real route curves out around the repulsor first; and hole 9's sun
+// reports no pull on the direct line by design — its job is to close the bottom lane, which
+// is off the direct route, and the planet stacked above it covers the line itself.
 const AUDIT_THIN = 20;              // px of margin below which a body is worth a look
 function auditCourse(){
   const rows = [];
@@ -683,7 +703,7 @@ function auditCourse(){
       let t = ((p.x-ax)*(bx-ax) + (p.y-ay)*(by-ay)) / L2;
       t = Math.max(0, Math.min(1, t));
       const dist  = Math.hypot(p.x-(ax+t*(bx-ax)), p.y-(ay+t*(by-ay)));
-      const reach = p.r * FIELD_R;
+      const reach = fieldReach(p);
       const margin = reach - dist;
       rows.push({
         hole:i+1, type:p.type, r:p.r, at:`(${p.x},${p.y})`,
